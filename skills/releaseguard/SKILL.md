@@ -3,7 +3,7 @@ name: releaseguard
 description: Scan, harden, sign, and verify release artifacts with ReleaseGuard — the artifact policy engine for dist/ and release/ outputs.
 homepage: https://github.com/Helixar-AI/ReleaseGuard
 user-invocable: true
-metadata: {"openclaw":{"requires":{"bins":["releaseguard"]}}}
+metadata: {"openclaw":{"requires":{"bins":["releaseguard"],"env":[]}}}
 ---
 
 # ReleaseGuard Skill
@@ -12,17 +12,49 @@ ReleaseGuard is an artifact policy engine. Use it to scan build outputs for secr
 
 ## Install ReleaseGuard
 
-If `releaseguard` is not installed, install it first:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/Helixar-AI/ReleaseGuard/main/scripts/install.sh | sh
-```
-
-Or via Homebrew:
+**Preferred — Homebrew (macOS / Linux, no remote script execution):**
 
 ```bash
 brew install Helixar-AI/tap/releaseguard
 ```
+
+**Alternative — manual download from GitHub Releases (review before running):**
+
+```bash
+# 1. Review the install script before executing:
+curl -sSfL https://raw.githubusercontent.com/Helixar-AI/ReleaseGuard/main/scripts/install.sh | less
+
+# 2. If satisfied, run it:
+curl -sSfL https://raw.githubusercontent.com/Helixar-AI/ReleaseGuard/main/scripts/install.sh | sh
+```
+
+**Alternative — direct binary download (no shell script):**
+
+```bash
+# Replace VERSION, OS, and ARCH as appropriate (linux/darwin, amd64/arm64)
+curl -sSfL https://github.com/Helixar-AI/ReleaseGuard/releases/latest/download/releaseguard-VERSION-OS-ARCH.tar.gz \
+  | tar -xz releaseguard
+sudo mv releaseguard /usr/local/bin/releaseguard
+```
+
+> **Note:** The install script is MIT-licensed and open-source at
+> https://github.com/Helixar-AI/ReleaseGuard/blob/main/scripts/install.sh
+> Review it before executing in sensitive environments.
+
+---
+
+## External Services
+
+Some commands interact with external services. This is documented per-command below. No data is sent externally unless you explicitly invoke the relevant flag or mode:
+
+| Feature | External Service | Triggered by |
+|---|---|---|
+| CVE enrichment | OSV.dev (read-only, no auth) | `sbom --enrich-cve` or `vex` |
+| Keyless signing | Sigstore / Fulcio (requires OIDC token) | `sign --mode keyless` |
+| Cloud obfuscation | ReleaseGuard Cloud API | `obfuscate --level medium/aggressive` |
+| SLSA Provenance L3 | ReleaseGuard Cloud API | Cloud plan only |
+
+**Credentials:** Keyless signing requires an OIDC token (available in GitHub Actions, GitLab CI, etc.). Local signing requires a private key file you supply with `--key`. Cloud features require `RELEASEGUARD_CLOUD_TOKEN`. No credentials are used by default for `check`, `fix`, `sbom`, `pack`, `report`, or `verify`.
 
 ---
 
@@ -30,7 +62,7 @@ brew install Helixar-AI/tap/releaseguard
 
 ### Check / Scan — `releaseguard check <path>`
 
-Scan an artifact path and evaluate the release policy.
+Scan an artifact path and evaluate the release policy. **No external network calls.**
 
 **Trigger phrases:** "scan", "check", "audit", "analyze release", "inspect dist", "any secrets", "find vulnerabilities"
 
@@ -41,18 +73,15 @@ releaseguard check <path> --format sarif --out results.sarif
 releaseguard check <path> --format markdown --out report.md
 ```
 
-- Default format: `cli` (human-readable, coloured)
+- Default format: `cli` (human-readable)
 - Other formats: `json`, `sarif`, `markdown`, `html`
-- Use `--out <file>` to write output to a file instead of stdout
-- Exit code 0 = PASS, non-zero = FAIL (use in CI gates)
-
-**Workflow:** Run `releaseguard check` first. If it fails, run `releaseguard fix` to apply deterministic hardening, then re-check.
+- Exit code 0 = PASS, non-zero = FAIL
 
 ---
 
 ### Fix — `releaseguard fix <path>`
 
-Apply safe, deterministic hardening transforms to an artifact path.
+Apply safe, deterministic hardening transforms. **No external network calls.**
 
 **Trigger phrases:** "fix", "harden", "apply fixes", "remediate", "auto-fix release"
 
@@ -61,26 +90,22 @@ releaseguard fix <path>
 releaseguard fix <path> --dry-run   # preview without applying
 ```
 
-- `--dry-run` shows what would change without modifying files
-- Always preview with `--dry-run` before applying to production artifacts
-
 ---
 
 ### SBOM — `releaseguard sbom <path>`
 
-Generate a Software Bill of Materials for the artifact.
+Generate a Software Bill of Materials.
 
-**Trigger phrases:** "sbom", "software bill of materials", "dependencies", "generate bom", "list components"
+**Trigger phrases:** "sbom", "software bill of materials", "dependencies", "generate bom"
 
 ```bash
-releaseguard sbom <path>
-releaseguard sbom <path> --format spdx --out sbom.spdx.json
-releaseguard sbom <path> --enrich-cve   # fetch CVE data from OSV.dev
+releaseguard sbom <path>                     # no network calls
+releaseguard sbom <path> --format spdx
+releaseguard sbom <path> --enrich-cve        # fetches CVE data from OSV.dev (read-only)
 ```
 
-- Default format: `cyclonedx` (outputs `.releaseguard/sbom.cdx.json`)
-- Other format: `spdx`
-- `--enrich-cve` fetches live vulnerability data from OSV.dev
+- Default format: `cyclonedx`
+- `--enrich-cve` makes read-only requests to OSV.dev; no credentials required
 
 ---
 
@@ -88,48 +113,44 @@ releaseguard sbom <path> --enrich-cve   # fetch CVE data from OSV.dev
 
 Apply obfuscation to release artifacts.
 
-**Trigger phrases:** "obfuscate", "strip symbols", "protect binary", "encrypt strings"
+**Trigger phrases:** "obfuscate", "strip symbols", "protect binary"
 
 ```bash
-releaseguard obfuscate <path> --level light
-releaseguard obfuscate <path> --level medium
+releaseguard obfuscate <path> --level light   # OSS — no network calls
+releaseguard obfuscate <path> --level medium  # requires RELEASEGUARD_CLOUD_TOKEN
 releaseguard obfuscate <path> --dry-run
 ```
 
 Levels:
-- `none` — no obfuscation
-- `light` — symbol strip, string encrypt, basic mangling (OSS)
-- `medium` — + control flow flatten, bytecode transform (Cloud)
-- `aggressive` — + opaque predicates, LLVM passes (Cloud)
+- `none` / `light` — local, no external calls (OSS)
+- `medium` / `aggressive` — calls ReleaseGuard Cloud API; requires `RELEASEGUARD_CLOUD_TOKEN`
 
 ---
 
 ### Harden — `releaseguard harden <path>`
 
-Full hardening pipeline: fix + obfuscate + DRM injection in one command.
+Full hardening pipeline: fix + obfuscate + DRM injection.
 
 **Trigger phrases:** "full harden", "harden release", "full hardening pipeline"
 
 ```bash
-releaseguard harden <path>
-releaseguard harden <path> --obfuscation medium --dry-run
+releaseguard harden <path> --obfuscation light    # no network calls
+releaseguard harden <path> --obfuscation medium   # requires RELEASEGUARD_CLOUD_TOKEN
+releaseguard harden <path> --dry-run
 ```
 
 ---
 
 ### Pack — `releaseguard pack <path>`
 
-Package an artifact into a canonical archive.
+Package an artifact into a canonical archive. **No external network calls.**
 
-**Trigger phrases:** "pack", "package artifact", "create archive", "bundle release"
+**Trigger phrases:** "pack", "package artifact", "create archive"
 
 ```bash
 releaseguard pack <path> --out release.tar.gz
 releaseguard pack <path> --out release.zip --format zip
 ```
-
-- `--out` is required
-- Formats: `tar.gz` (default), `zip`
 
 ---
 
@@ -137,15 +158,18 @@ releaseguard pack <path> --out release.zip --format zip
 
 Sign an artifact and its evidence bundle.
 
-**Trigger phrases:** "sign", "cosign", "keyless sign", "sign artifact", "add signature"
+**Trigger phrases:** "sign", "cosign", "keyless sign", "sign artifact"
 
 ```bash
-releaseguard sign <artifact>                       # keyless (Sigstore)
+# Keyless (Sigstore/Fulcio) — requires OIDC token; use in CI environments
+releaseguard sign <artifact> --mode keyless
+
+# Local signing — no external calls; requires private key file
 releaseguard sign <artifact> --mode local --key signing.key
 ```
 
-- Default mode: `keyless` via Sigstore (requires OIDC token in CI)
-- `local` mode: provide a private key file with `--key`
+- `keyless` mode contacts Sigstore's Fulcio CA and Rekor transparency log
+- `local` mode is fully offline; key stays on disk
 
 ---
 
@@ -153,7 +177,7 @@ releaseguard sign <artifact> --mode local --key signing.key
 
 Emit in-toto and SLSA provenance attestations.
 
-**Trigger phrases:** "attest", "provenance", "slsa", "in-toto", "generate attestation"
+**Trigger phrases:** "attest", "provenance", "slsa", "in-toto"
 
 ```bash
 releaseguard attest <artifact>
@@ -163,9 +187,9 @@ releaseguard attest <artifact>
 
 ### Verify — `releaseguard verify <artifact>`
 
-Verify artifact signatures and policy compliance.
+Verify artifact signatures and policy compliance. **No credentials required for verification.**
 
-**Trigger phrases:** "verify", "check signature", "validate artifact", "is this signed"
+**Trigger phrases:** "verify", "check signature", "validate artifact"
 
 ```bash
 releaseguard verify <artifact>
@@ -175,25 +199,22 @@ releaseguard verify <artifact>
 
 ### Report — `releaseguard report <path>`
 
-Export a scan report in a specified format.
+Export a scan report. **No external network calls.**
 
-**Trigger phrases:** "report", "export report", "generate report", "compliance report"
+**Trigger phrases:** "report", "export report", "compliance report"
 
 ```bash
-releaseguard report <path>
 releaseguard report <path> --format sarif --out results.sarif
 releaseguard report <path> --format html --out report.html
 ```
-
-- Formats: `json` (default), `cli`, `sarif`, `markdown`, `html`
 
 ---
 
 ### VEX — `releaseguard vex <path>`
 
-Enrich an SBOM with VEX (Vulnerability Exploitability eXchange) data.
+Enrich SBOM with VEX vulnerability data. **Makes read-only requests to OSV.dev.**
 
-**Trigger phrases:** "vex", "vulnerability data", "enrich sbom", "exploitability"
+**Trigger phrases:** "vex", "vulnerability data", "enrich sbom"
 
 ```bash
 releaseguard vex <path> --sbom .releaseguard/sbom.cdx.json --out vex.json
@@ -203,52 +224,45 @@ releaseguard vex <path> --sbom .releaseguard/sbom.cdx.json --out vex.json
 
 ## Typical Workflows
 
-### Full release pipeline
+### Quick scan (no network, no credentials)
 ```bash
-releaseguard check ./dist        # scan for issues
-releaseguard fix ./dist          # apply deterministic hardening
-releaseguard sbom ./dist         # generate SBOM
+releaseguard check ./dist
+```
+
+### Full pipeline (CI with keyless signing)
+```bash
+releaseguard check ./dist
+releaseguard fix ./dist
+releaseguard sbom ./dist
 releaseguard pack ./dist --out release.tar.gz
-releaseguard sign release.tar.gz
+releaseguard sign release.tar.gz --mode keyless   # OIDC token required
 releaseguard attest release.tar.gz
 releaseguard verify release.tar.gz
 ```
 
-### Quick scan + report
+### Offline pipeline (no network, local key)
 ```bash
-releaseguard check ./dist --format markdown --out scan-report.md
+releaseguard check ./dist
+releaseguard fix ./dist
+releaseguard sbom ./dist
+releaseguard pack ./dist --out release.tar.gz
+releaseguard sign release.tar.gz --mode local --key signing.key
 ```
-
-### CI gate (fail on policy violation)
-```bash
-releaseguard check ./dist --format sarif --out results.sarif && echo "PASS" || echo "FAIL"
-```
-
----
-
-## Output Interpretation
-
-- **PASS** — all policy rules satisfied, artifact is clean
-- **FAIL** — one or more findings require attention; exit code is non-zero
-- Findings include: category (secret, config, sbom, permission), severity (critical/high/medium/low/info), file path, line number, and remediation hint
-- Use `releaseguard fix` to auto-remediate safe findings, then re-run `releaseguard check`
 
 ---
 
 ## Configuration
 
-ReleaseGuard reads `.releaseguard.yml` in the current directory. Initialize it with:
-
 ```bash
-releaseguard init
+releaseguard init   # creates .releaseguard.yml
 ```
 
-Key config options:
 ```yaml
+# .releaseguard.yml
+version: 2
 scanning:
   exclude_paths:
     - test/fixtures
-    - examples
 policy:
   fail_on: [critical, high]
 ```
