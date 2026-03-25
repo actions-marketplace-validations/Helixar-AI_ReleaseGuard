@@ -38,7 +38,10 @@ fi
 echo "Installing releaseguard ${VERSION} (${OS}/${ARCH})..."
 
 # Build download URL
-ARCHIVE="${BINARY}-${VERSION}-${OS}-${ARCH}.tar.gz"
+# Strip the leading 'v' from VERSION for the archive filename — release assets
+# are named without it (e.g. releaseguard-0.1.2-linux-amd64.tar.gz) even though
+# the git tag and the download path use the 'v' prefix (v0.1.2).
+ARCHIVE="${BINARY}-${VERSION#v}-${OS}-${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE}"
 
 # Download and extract
