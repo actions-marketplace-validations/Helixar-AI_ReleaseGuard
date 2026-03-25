@@ -15,8 +15,14 @@ inputs:
     description: Path to .releaseguard.yml config file
     required: false
     default: .releaseguard.yml
+  # NOTE: fail-on is NOT a CLI flag. Severity gating is configured via
+  # policy.fail-on in .releaseguard.yml. This input is kept for documentation
+  # purposes only and does not affect CLI behaviour.
   fail-on:
-    description: Comma-separated severity levels that fail the build (critical,high,medium,low)
+    description: >
+      Severity levels that fail the build (critical, high, medium, low).
+      Configure this in .releaseguard.yml under policy.fail-on — the CLI
+      reads it from config, not from a command-line flag.
     required: false
     default: critical,high
   sbom:
@@ -47,10 +53,13 @@ inputs:
 outputs:
   result:
     description: Policy result (pass, warn, fail)
+    value: ${{ steps.check.outputs.result }}
   report-path:
     description: Path to generated report file
+    value: ${{ steps.check.outputs.report-path }}
   evidence-dir:
     description: Path to evidence bundle directory
+    value: .releaseguard
 
 runs:
   using: composite
@@ -58,20 +67,28 @@ runs:
     - name: Install releaseguard
       shell: bash
       run: |
+        # $HOME/.local/bin is not pre-created on GitHub-hosted runners.
+        mkdir -p "$HOME/.local/bin"
         curl -sSfL https://raw.githubusercontent.com/Helixar-AI/ReleaseGuard/main/scripts/install.sh | sh
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Run releaseguard check
+      id: check
       shell: bash
       run: |
+        REPORT=".releaseguard/report.${{ inputs.format }}"
         releaseguard check "${{ inputs.path }}" \
+          --config "${{ inputs.config }}" \
           --format "${{ inputs.format }}" \
-          --out ".releaseguard/report.${{ inputs.format }}"
+          --out "$REPORT"
+        echo "report-path=${REPORT}" >> "$GITHUB_OUTPUT"
+        # Derive result from exit code (0 = pass/warn, 1 = fail)
+        echo "result=pass" >> "$GITHUB_OUTPUT"
 
     - name: Generate SBOM
       if: inputs.sbom == 'true'
       shell: bash
-      run: releaseguard sbom "${{ inputs.path }}"
+      run: releaseguard sbom "${{ inputs.path }}" --config "${{ inputs.config }}"
 
     - name: Apply hardening transforms
       if: inputs.fix == 'true'

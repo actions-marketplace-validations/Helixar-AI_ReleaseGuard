@@ -150,8 +150,11 @@ Renders as: [\![ReleaseGuard](https://img.shields.io/badge/releaseguard-passing-
 
 ## GitHub Action
 
+> **Always pin to a commit SHA** — mutable tags can be moved. Replace `<SHA>` with
+> the SHA of the release you want, e.g. `229a90dff5a31d7805e5df43bb9230f9fe5ec75c` for v0.1.2.
+
 ```yaml
-- uses: Helixar-AI/ReleaseGuard@v1
+- uses: Helixar-AI/ReleaseGuard@<SHA>  # vX.Y.Z
   with:
     path: ./dist
     sbom: true
@@ -159,6 +162,21 @@ Renders as: [\![ReleaseGuard](https://img.shields.io/badge/releaseguard-passing-
     sign: keyless
     format: sarif
 ```
+
+**CLI flags reference** (for direct use of the `releaseguard` binary):
+
+| Command | Key flags |
+|---|---|
+| `releaseguard check <path>` | `--format <cli\|json\|sarif\|markdown\|html>`, `--out <file>`, `--config <file>` |
+| `releaseguard sbom <path>` | `--format <cyclonedx\|spdx>`, `--out <file>`, `--enrich-cve` |
+| `releaseguard fix <path>` | `--dry-run` |
+| `releaseguard obfuscate <path>` | `--level <none\|light\|medium\|aggressive>` |
+| `releaseguard sign <artifact>` | `--mode <keyless\|local>`, `--key <file>` |
+
+> **Note:** `--fail-on` is **not** a CLI flag. Severity gating (which findings
+> fail the build) is configured in `.releaseguard.yml` under `policy.fail-on`.
+> The `fail-on` input on the GitHub Action is documentation-only and does not
+> pass any flag to the CLI.
 
 ---
 
