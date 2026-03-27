@@ -49,6 +49,12 @@ inputs:
     description: ReleaseGuard Cloud API token (optional — enables Cloud features)
     required: false
     default: ""
+  artifact-name:
+    description: >
+      Name for the uploaded evidence bundle artifact. Override when calling
+      ReleaseGuard multiple times in the same workflow run to avoid 409 conflicts.
+    required: false
+    default: releaseguard-evidence
 
 outputs:
   result:
@@ -114,7 +120,7 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: releaseguard-evidence
+        name: ${{ inputs.artifact-name }}
         path: .releaseguard/
         if-no-files-found: warn
         include-hidden-files: true
